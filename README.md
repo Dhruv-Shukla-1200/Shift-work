@@ -1,16 +1,16 @@
 # Shift Work
 
-A 2D **dimension-swapping action-platformer** built in Python + Pygame for the GDG On Campus VIT Vellore Tech Wildcard Game Development competition.
+A 2D **dimension-swapping puzzle-platformer** built in Python + Pygame for the GDG On Campus VIT Vellore Tech Wildcard Game Development competition.
 
-You play a night-shift custodian who exists in two dimensions at once. Press **SPACE** to instantly swap between *Corporate Reality* (muted blue-grey office) and *Surreal Chaos* (dreamlike purple). Each world has different obstacles and hazards — you must use both to solve each level.
+You play a night-shift custodian caught between two dimensions at once. Press **SPACE** to instantly swap between *Corporate Reality* (muted blue-grey office) and *Surreal Chaos* (dreamlike purple realm). Each world features unique obstacles, platforms, hazards, and shared objects — you must manipulate both realities in sync to clear each shift.
 
 ---
 
 ## Engine / Framework
 
-- **Language:** Python 3
-- **Library:** [Pygame](https://www.pygame.org/) (no other game libraries)
-- All graphics are drawn with `pygame.draw.rect` — no external assets needed.
+- **Language:** Python 3 (tested with Python 3.13)
+- **Library:** [Pygame](https://www.pygame.org/) 2.6+ (no external dependencies)
+- **Graphics:** High-resolution transparent PNG sprites (self-made in Figma, exported via Pygame sprite generation tool at exact collision boundaries) with procedural vector shape fallbacks.
 
 ---
 
@@ -21,7 +21,8 @@ pip install -r requirements.txt
 python main.py
 ```
 
-> **Windows note:** If you have multiple Python versions, use `py -3.13 main.py`.
+> **Windows note:** If you have multiple Python versions installed, run `py -3.13 main.py`.
+> To run the automated headless verification suite: `py -3.13 test_levels.py`.
 
 ---
 
@@ -31,56 +32,84 @@ python main.py
 |---|---|
 | Left / A | Move left |
 | Right / D | Move right |
-| Up / W | Jump (only when grounded) |
-| SPACE | Swap dimension |
-| R | Restart at any time |
+| Up / W | Jump (when grounded on a solid surface) |
+| SPACE | Swap dimension (0.3s cooldown; blocked if solid would overlap) |
+| R | Restart current level during play; restart game on Game Over / Win screen |
+| Any key | Dismiss title screen / level intro card |
 
 ---
 
-## Implemented Features (Task 1 mapping)
+## The 5 Levels
 
-| Task 1 Requirement | Feature in Shift Work |
-|---|---|
-| Keyboard-controlled player | WASD / Arrow keys + jump |
-| Obstacle / hazard | Reality wall (blocks movement) + Chaos pests (deadly) |
-| Scoring system | +10 pts/sec while alive; +1000 on exit |
-| Game-over condition | Lose all 3 lives → GAME OVER screen |
-| Restart option | Press R at any time |
-| Score on screen | Live HUD: Score, Level, Lives, Best |
+The game features 5 hand-crafted levels, each introducing or mastering a distinct mechanic:
 
-**Additional features (P1):**
-- 2-level progression (data-driven LEVELS list, easily extensible)
-- 3 lives with respawn at the start of the current level
-- Swap cooldown (0.3 s) prevents spamming
-- White screen flash (8 frames) gives immediate swap feedback
-- High score persisted to `highscore.txt` across sessions
+| # | Name | Core Concept | Solution Strategy |
+|---|------|--------------|-------------------|
+| **1** | **Walls Aren't Real** | Swapping in both directions | Walk right to the Reality wall; swap to Chaos to walk past it; swap back to Reality before the Chaos floor spikes; enter the exit door. |
+| **2** | **Stairway Between Worlds** | Mid-air swaps & ghost platforms | Platforms alternate between Reality and Chaos. Jump from one platform and press SPACE in mid-air to land on the next using ghost outlines as guides. |
+| **3** | **Push It** | Shared object manipulation | Cabinet (Reality) and stone pillar (Chaos) share one position. The wall blocks the cabinet in Reality, but in Chaos the pillar can be pushed all the way across to form a staircase up to the high ledge. |
+| **4** | **Hold the Door** | Pressure plate & security gate | Park the shared object on the floor pressure plate to permanently hold the gate open. Swap between dimensions to bypass patrolling Chaos pests and jump through the open gate. |
+| **5** | **Overtime** (Finale) | All mechanics combined | Push the cabinet to the wall; swap to Chaos and push past with pest timing; swap back to Reality to push the anchor to the staircase position; climb the pillar to the Chaos platform; jump and swap mid-air to the Reality goal ledge. |
 
 ---
 
-## How the Dimension Swap Works
+## Core Engine Mechanics
 
-A single integer variable `dim` (0 = Reality, 1 = Chaos) controls everything. `static_solids(level, dim)` returns a different list of solid rectangles depending on `dim` — the Reality wall only appears when `dim == REALITY`. The background colour, object colours, and which sprites are drawn all use `dim` as an index into colour palette tuples. Swapping is instant (one frame) but guarded by a 0.3 s cooldown and a collision check that prevents swapping into a solid.
+### 1. Dimension-Tagged Platform System (E1)
+Every platform in a level is tagged as `BOTH`, `REAL`, or `CHAOS`. Immovable solids are resolved dynamically based on current dimension:
+```python
+BOTH, REAL, CHAOS = "both", "reality", "chaos"
+```
+The floor is simply a platform tagged `BOTH`, allowing arbitrary platform layouts, ledges, and vertical partitions.
+
+### 2. Ghost Outlines (E5)
+Objects and hazards that exist only in the *other* dimension are rendered as faint, translucent outlines (~30% opacity). This provides essential visual telegraphing for mid-air jumps and spatial alignment.
+
+### 3. Hazard Spikes (E3)
+Spike strips are dimension-specific hazards. When the player steps into an active spike in that world, a life is lost. In the alternate dimension, spikes are harmless and appear as faint ghost outlines.
+
+### 4. Pressure Plate & Security Gate (E4)
+- **Pressure Plate:** Sits on the floor and activates when either the player stands on it (in the plate's dimension) or the shared pushable object is parked on it. Because the cabinet and pillar are the same physical object, parking the anchor holds the plate down in *both* worlds.
+- **Security Gate:** Heavy solid barrier blocking both dimensions while closed. When the plate is held down, the gate opens and permits free passage.
+
+### 5. Shared Anchor Object (E2)
+In Corporate Reality, the anchor is a 50 px filing cabinet; in Surreal Chaos, it is a 100 px stone pillar. Levels can define custom cabinet/pillar heights or set `anchor: None` for pure platforming levels.
+
+### 6. Level Intro Cards & Safe HUD (E6)
+Each level begins with a centered frosted-glass card displaying the level number, name, and tactical hint. The card fades out after 2.5 seconds or immediately upon any key press. All level elements avoid the HUD panel safe zone (`x < 215, y < 180`).
+
+### 7. Fall Safety & Dynamic Restarts (E7, E8)
+- Falling below the screen immediately triggers a hazard hit and respawn to prevent softlocks.
+- Pressing **R** during gameplay restarts the current level (resetting player and object positions while preserving score and lives). On Game Over or Win screens, **R** restarts the entire shift.
 
 ---
 
-## How the Anchor / Pushing Twist Works
+## Visual Polish & Aesthetics
 
-The filing cabinet (Reality) and stone pillar (Chaos) share one `anchor_x` float. `anchor_rect(level, dim, anchor_x)` builds the correct rectangle for the current dimension from that single x value. When the player walks into the object, `move_x` tries to shift `anchor_x` by the player's movement speed. If the destination is clear of static solids and within screen bounds, `anchor_x` is updated — both objects move together. If blocked, the player stops at the object's edge instead.
+- **Pre-baked vertical gradient backgrounds:** Deep corporate navy/grey in Reality, cosmic violet/magenta in Chaos.
+- **World-specific decor:** Fluorescent strip lights, office desks, monitors, and motivational posters in Reality; twinkling stars, floating energy halos, rotating arcane triangles, and ground mist in Chaos.
+- **Swap feedback:** 8-frame white screen flash, dynamic screen shake, and 22 burst particles matching world colors.
+- **Detailed procedural sprites:** Uniformed custodian with animated eyes/cap, multi-legged bobbing pests with glowing eyes, beveled steel gates with indicator status LEDs, and glowing exit doors.
+- **High score persistence:** Best score saved automatically to `highscore.txt`.
 
 ---
 
-## Limitations / Future Work
+## Automated Verification
 
-- 2 levels only (adding more requires one new dict in the `LEVELS` list)
-- No sprite art — all objects are coloured rectangles (placeholders)
-- No sound effects (P4 scope)
-- No parallax backgrounds
-- Enemy AI (P3 state machine) not implemented
+The repository includes a comprehensive headless test runner (`test_levels.py`) that tests all 5 levels and engine mechanics without requiring a display server:
+```bash
+py -3.13 test_levels.py
+```
+Verified checks:
+- All 5 levels load in order and are solvable using intended mechanics.
+- Shortcuts (e.g. jumping over 140px walls, clearing 220px spike strips, leaping over the 150px gate) fail physics limits.
+- Gate remains locked until plate is pressed by anchor/player.
+- Spikes and pests deal damage strictly in their designated dimensions.
+- Level restart (`R`) and fall safety (`E7`) work as expected.
 
 ---
 
 ## Credits
 
-- Built entirely from scratch using Python + Pygame.
-- No external assets, tutorials, or art used.
-- Pygame community: https://www.pygame.org/contribute.html
+- **Game Design & Code:** GDG On Campus VIT Vellore Tech Wildcard Entry.
+- **Assets & Art:** Visual assets and sprite set created by the author — **self-made in Figma** (custom 2D sprites including reality custodian, chaos custodian, mirrored movement directions, filing cabinet, stone pillar, exit door, dimensional pests, floor spikes, pressure plates, security gates, HUD icons, logo wordmark, and title art). All visual sprites strictly adapt to the predefined physics collision rectangles without altering collision geometries.
